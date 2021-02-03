@@ -1,19 +1,28 @@
 #!/usr/bin/python
 from enum import Enum
+import sys
 import struct
 import datetime
+import json
 
 PE_MAGIC  = b'MZ'
 ELF_MAGIC = b'\x7fELF'
 
-def strcut_decode(obj, file, fmt, keys):
+def get_fmt(values):
+    return '=' + ''.join([v for v in values])
+
+def strcut_unpack(obj, file, keyword):
+    fmt = get_fmt(keyword.values())
     byte = file.read(struct.calcsize(fmt))
     data = struct.unpack(fmt, byte)
-    for i in range(len(keys)):
-        setattr(obj, keys[i], data[i])
+    i = 0
+    for v in keyword.keys():
+        setattr(obj, v, data[i])
+        i = i + 1
 
-def strcut_encode(obj, fmt, keys):
-    data = [getattr(obj, v) for v in keys]
+def strcut_pack(obj, keyword):
+    fmt = get_fmt(keyword.values())
+    data = [getattr(obj, v) for v in keyword.keys()]
     return struct.pack(fmt, *data)
 
 def get_desc(key, desc_table):
@@ -24,44 +33,103 @@ def get_desc(key, desc_table):
         key = desc_table(key)
     return key
 
+def serialize(obj, keyword, desc):
+    res = {}
+    for v in keyword.keys():
+        attr = getattr(obj, v)
+        if v in desc:
+            attr = "{0:X} ({1})".format(attr, get_desc(attr, desc[v]))
+        else:
+            attr = "{0:X}".format(attr)
+        res[v] = attr
+
+    return json.dumps(res, indent='    ')
+
 class Magic(Enum):
     PE  = 1
     ELF = 2
 
 class CoffFileHeader:
-    _FMT  = '=HHIIIHH'
-    _KEYS = [
-        'Machine', 'NumberOfSections', 'TimeDateStamp', 'PointerToSymbolTable', 'NumberOfSymbols', 'SizeOfOptionalHeader', 'Characteristics'
-    ]
+    _KEYWORD = {
+        'Machine':              'H',
+        'NumberOfSections':     'H',
+        'TimeDateStamp':        'I',
+        'PointerToSymbolTable': 'I',
+        'NumberOfSymbols':      'I',
+        'SizeOfOptionalHeader': 'H',
+        'Characteristics':      'H',
+    }
     _DESC = {
         'Machine': {
-            0x14c: 'Intel 386',
+            0x14c:  'x86',
             0x8664: 'x64',
         },
         'TimeDateStamp': lambda x: datetime.datetime.fromtimestamp(x),
         'Characteristics': {
-            0x0002: 'IMAGE_FILE_EXECUTABLE_IMAGE',
-            0x0020: 'IMAGE_FILE_LARGE_ADDRESS_AWARE',
-            0x2000: 'IMAGE_FILE_DLL',
+            0x0002: 'Excutable',
+            0x0020: 'Application can handle large (>2GB) addresses',
+            0x2000: 'DLL',
         },
     }
 
     def __init__(self, file):
-        strcut_decode(self, file, CoffFileHeader._FMT, CoffFileHeader._KEYS)
+        self._KEYWORD = CoffFileHeader._KEYWORD
+        self._DESC    = CoffFileHeader._DESC
+        strcut_unpack(self, file, self._KEYWORD)
 
     def __str__(self):
-        res = {}
-        for v in CoffFileHeader._KEYS:
-            attr = getattr(self, v)
-            if v in CoffFileHeader._DESC:
-                attr = "{0:#x} ({1})".format(attr, get_desc(attr, CoffFileHeader._DESC[v]))
-            res[v] = attr
-
-        return str(res)
+        return serialize(self, self._KEYWORD, self._DESC)
 
     def byte(self):
-        return strcut_encode(self, CoffFileHeader._FMT, CoffFileHeader._KEYS)
+        return strcut_pack(self, self._KEYWORD)
 
+class OptionHeader:
+    _KEYWORD = {
+        'Magic':                   'H',
+        'LinkerVersion':           'H',
+        'SizeOfCode':              'I',
+        'SizeOfInitializedData':   'I',
+        'SizeOfUninitializedData': 'I',
+        'AddressOfEntryPoint':     'I',
+        'BaseOfCode':              'I',
+        'BaseOfData':              'I',
+
+        'ImageBase':               'I',
+    }
+    _KEYWORD_PLUS = {
+        'Magic':                   'H',
+        'LinkerVersion':           'H',
+        'SizeOfCode':              'I',
+        'SizeOfInitializedData':   'I',
+        'SizeOfUninitializedData': 'I',
+        'AddressOfEntryPoint':     'I',
+        'BaseOfCode':              'I',
+
+        'ImageBase':               'L',
+    }
+    _DESC = {
+        'Magic': {
+            0x10b: 'PE32',
+            0x20b: 'PE32+',
+        },
+        'LinkerVersion': lambda x: '{0}.{1:0>2d}'.format(x % 0x100, int(x / 0x100)),
+    }
+    def __init__(self, file):
+        self.offset = file.tell()
+        magic = int.from_bytes(file.read(2), byteorder=sys.byteorder)
+        file.seek(self.offset)
+
+        assert(magic == 0x10b or magic == 0x20b)
+
+        self._KEYWORD = OptionHeader._KEYWORD if magic == 0x10b else OptionHeader._KEYWORD_PLUS
+        self._DESC    = OptionHeader._DESC
+
+        strcut_unpack(self, file, self._KEYWORD)
+
+        self._image_type = self._DESC['Magic'][magic]
+
+    def __str__(self):
+        return serialize(self, self._KEYWORD, self._DESC)
 
 class ELF:
     def __init__(self, file, path):
@@ -79,11 +147,14 @@ class PE:
         self._file.close()
 
     def __str__(self):
-        return str(self.coff_file_header)
+        return json.dumps({
+            'File Header':   str(self.file_header),
+            'Option Header': str(self.option_header),
+        }, indent='    ')
 
     def __check_signature(self):
         self._file.seek(0x3c)
-        sign_offset = int.from_bytes(self._file.read(4), byteorder='little', signed=False)
+        sign_offset = int.from_bytes(self._file.read(4), byteorder=sys.byteorder)
 
         self._file.seek(sign_offset)
         sign = self._file.read(4)
@@ -91,27 +162,20 @@ class PE:
 
         self.coff_file_header_offset = self._file.tell()
 
-    def __coff_file_header(self):
-        self.coff_file_header = CoffFileHeader(self._file)
+    def __file_header(self):
+        self.file_header = CoffFileHeader(self._file)
 
     def __option_header(self):
-        # magic = self._file.read(2)
-        magic = int.from_bytes(self._file.read(2), byteorder='little', signed=False)
-        if magic == 0x10b:
-            self._image_type = 'PE32'
-        else:
-            self._image_type = 'PE32+'
-
-        print(self._image_type)
+        self.option_header = OptionHeader(self._file)
 
     def __parser(self):
         self.__check_signature()
-        self.__coff_file_header()
+        self.__file_header()
         self.__option_header()
 
     def save(self):
         self._file.seek(self.coff_file_header_offset)
-        byte = self.coff_file_header.byte()
+        byte = self.file_header.byte()
         self._file.write(byte)
 
 
