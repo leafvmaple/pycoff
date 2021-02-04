@@ -148,8 +148,8 @@ class PE:
 
     def __str__(self):
         return json.dumps({
-            'File Header':   str(self.file_header),
-            'Option Header': str(self.option_header),
+            'FileHeader':   str(self.file_header),
+            'OptionHeader': str(self.option_header),
         }, indent='    ')
 
     def __check_signature(self):
