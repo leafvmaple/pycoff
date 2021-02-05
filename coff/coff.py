@@ -29,12 +29,12 @@ def parse(obj, file, types):
         var = [parse(obj, file, v) for v in types]
     return var
 
-def frombytes(obj, file, keyword):
+def from_bytes(obj, file, keyword):
     for k, v in keyword.items():
         var = parse(obj, file, v)
         setattr(obj, k, var)
 
-def tobytes(obj, keyword):
+def to_bytes(obj, keyword):
     res = b''
     for k, v in keyword.items():
         value = getattr(obj, k)
@@ -102,7 +102,7 @@ class SectionTable:
         self._KEYWORD = SectionTable._KEYWORD
         self._DESC    = SectionTable._DESC
 
-        frombytes(self, file, self._KEYWORD)
+        from_bytes(self, file, self._KEYWORD)
 
     def __str__(self):
         return str(self.format())
@@ -113,8 +113,8 @@ class SectionTable:
     def tojson(self, indent='\t'):
         return json.dumps(self.format(), indent=indent)
 
-    def tobytes(self):
-        return tobytes(self, self._KEYWORD)
+    def to_bytes(self):
+        return to_bytes(self, self._KEYWORD)
 
 class Version:
     def __init__(self, file, keyword, desc):
@@ -124,7 +124,7 @@ class Version:
         self.Major = 0
         self.Minor = 0
 
-        frombytes(self, file, keyword)
+        from_bytes(self, file, keyword)
 
     def __str__(self):
         return str(self.format())
@@ -135,8 +135,8 @@ class Version:
     def tojson(self, indent='\t'):
         return json.dumps(self.format(), indent=indent)
 
-    def tobytes(self):
-        return tobytes(self, self._KEYWORD)
+    def to_bytes(self):
+        return to_bytes(self, self._KEYWORD)
 
 class Version2(Version):
     _KEYWORD = {
@@ -161,7 +161,7 @@ class Header:
         self._KEYWORD = keyword
         self._DESC    = desc
 
-        frombytes(self, file, keyword)
+        from_bytes(self, file, keyword)
 
     def __str__(self):
         return str(self.format())
@@ -172,8 +172,8 @@ class Header:
     def tojson(self, indent='\t'):
         return json.dumps(self.format(), indent=indent)
 
-    def tobytes(self):
-        return tobytes(self, self._KEYWORD)
+    def to_bytes(self):
+        return to_bytes(self, self._KEYWORD)
 
 class CoffFileHeader(Header):
     _KEYWORD = {
@@ -351,25 +351,25 @@ class PE:
         return str(format(self, self.keyword, self.desc))
 
     def __parser(self):
-        frombytes(self, self._file, self.keyword)
+        from_bytes(self, self._file, self.keyword)
 
         keyword = {'SectionTable': [SectionTable for i in range(self.FileHeader.NumberOfSections)]}
 
-        frombytes(self, self._file, keyword)
+        from_bytes(self, self._file, keyword)
         self.keyword.update(keyword)
 
     def format(self):
         return format(self, self.keyword, self.desc)
 
-    def tobytes(self):
-        return tobytes(self, self.keyword)
+    def to_bytes(self):
+        return to_bytes(self, self.keyword)
 
     def tojson(self, indent='\t'):
         return json.dumps(format(self, self.keyword, self.desc), indent=indent)
 
     def save(self):
         self._file.seek(self.offset)
-        byte = tobytes()
+        byte = to_bytes()
         self._file.write(byte)
 
 def check_pe(file):
