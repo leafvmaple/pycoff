@@ -1,11 +1,26 @@
 import sys
-import json
 import datetime
 
-from .utility import from_bytes, to_bytes, format
+from .utility import Header, Version
 
-class SectionTable:
-    _KEYWORD = {
+class Version2(Version):
+    _EXPORT = {
+        'Major': 'u1',
+        'Minor': 'u1',
+    }
+    def __init__(self, file):
+        super(Version2, self).__init__(file, Version2._EXPORT)
+
+class Version4(Version):
+    _EXPORT = {
+        'Major': 'u2',
+        'Minor': 'u2',
+    }
+    def __init__(self, file):
+        super(Version4, self).__init__(file, Version4._EXPORT)
+
+class SectionTable(Header):
+    _EXPORT = {
         'Name':                 's8',
         'VirtualSize':          'u4',
         'VirtualAddress':       'u4',
@@ -29,84 +44,11 @@ class SectionTable:
         },
     }
     def __init__(self, file):
-        self._KEYWORD = SectionTable._KEYWORD
-        self._DESC    = SectionTable._DESC
-
-        from_bytes(self, file, self._KEYWORD)
-
-    def __str__(self):
-        return str(self.format())
-        
-    def format(self):
-        return format(self, self._KEYWORD, self._DESC)
-
-    def tojson(self, indent='\t'):
-        return json.dumps(self.format(), indent=indent)
-
-    def to_bytes(self):
-        return to_bytes(self, self._KEYWORD)
-
-class Version:
-    def __init__(self, file, keyword, desc):
-        self._KEYWORD = keyword
-        self._DESC    = desc
-
-        self.Major = 0
-        self.Minor = 0
-
-        from_bytes(self, file, keyword)
-
-    def __str__(self):
-        return str(self.format())
-
-    def format(self):
-        return '{0}.{1:0>2d}'.format(self.Major, self.Minor)
-
-    def tojson(self, indent='\t'):
-        return json.dumps(self.format(), indent=indent)
-
-    def to_bytes(self):
-        return to_bytes(self, self._KEYWORD)
-
-class Version2(Version):
-    _KEYWORD = {
-        'Major': 'u1',
-        'Minor': 'u1',
-    }
-    _DESC = {}
-    def __init__(self, file):
-        super(Version2, self).__init__(file, Version2._KEYWORD, Version2._DESC)
-
-class Version4(Version):
-    _KEYWORD = {
-        'Major': 'u2',
-        'Minor': 'u2',
-    }
-    _DESC = {}
-    def __init__(self, file):
-        super(Version4, self).__init__(file, Version4._KEYWORD, Version4._DESC)
-
-class Header:
-    def __init__(self, file, keyword, desc):
-        self._KEYWORD = keyword
-        self._DESC    = desc
-
-        from_bytes(self, file, keyword)
-
-    def __str__(self):
-        return str(self.format())
-        
-    def format(self):
-        return format(self, self._KEYWORD, self._DESC)
-
-    def tojson(self, indent='\t'):
-        return json.dumps(self.format(), indent=indent)
-
-    def to_bytes(self):
-        return to_bytes(self, self._KEYWORD)
+        super().__init__(SectionTable._DESC)
+        self.update(file, SectionTable._EXPORT)
 
 class CoffFileHeader(Header):
-    _KEYWORD = {
+    _EXPORT = {
         'Machine':              'u2',
         'NumberOfSections':     'u2',
         'TimeDateStamp':        'u4',
@@ -129,21 +71,23 @@ class CoffFileHeader(Header):
     }
 
     def __init__(self, file):
+        super().__init__(CoffFileHeader._DESC)
         self.offset = file.tell()
-        super(CoffFileHeader, self).__init__(file, CoffFileHeader._KEYWORD, CoffFileHeader._DESC)
+
+        self.update(file, CoffFileHeader._EXPORT)
 
 class DirectoriesHeader(Header):
-    _KEYWORD = {
+    _EXPORT = {
         'VirtualAddress':    'u4',
         'Size':              'u4',
     }
-    _DESC = {}
 
     def __init__(self, file):
-        super(DirectoriesHeader, self).__init__(file, DirectoriesHeader._KEYWORD, DirectoriesHeader._DESC)
+        super().__init__()
+        self.update(file, DirectoriesHeader._EXPORT)
 
 class OptionHeader(Header):
-    _KEYWORD_S1 = {
+    _EXPORT_S1 = {
         # Optional Header Standard Fields
         'Magic':                   'u2',
         'LinkerVersion':           Version2,
@@ -154,7 +98,7 @@ class OptionHeader(Header):
         'BaseOfCode':              'u4',
     }
     # PE32
-    _KEYWORD = {
+    _EXPORT = {
         'BaseOfData':              'u4',
 
         # Optional Header Windows-Specific Fields
@@ -179,7 +123,7 @@ class OptionHeader(Header):
     }
 
     # PE32+
-    _KEYWORD_PLUS = {
+    _EXPORT_PLUS = {
         # Optional Header Windows-Specific Fields
         'ImageBase':               'u8',
         'SectionAlignment':        'u4',
@@ -201,7 +145,7 @@ class OptionHeader(Header):
         'NumberOfRvaAndSizes':     'u4',
     }
 
-    _KEYWORD_S3 = {
+    _EXPORT_S3 = {
         # Optional Header Data Directories
         'ExportTable':             DirectoriesHeader,
         'ImportTable':             DirectoriesHeader,
@@ -237,58 +181,47 @@ class OptionHeader(Header):
         },
     }
     def __init__(self, file):
+        super().__init__(OptionHeader._DESC)
         self.offset = file.tell()
+
         magic = int.from_bytes(file.read(2), byteorder=sys.byteorder)
         file.seek(self.offset)
 
         assert(magic == 0x10b or magic == 0x20b)
 
-        keyword = OptionHeader._KEYWORD_S1
-        keyword.update(OptionHeader._KEYWORD if magic == 0x10b else OptionHeader._KEYWORD_PLUS)
-        keyword.update(OptionHeader._KEYWORD_S3)
-
-        super(OptionHeader, self).__init__(file, keyword, OptionHeader._DESC)
+        self.update(file, OptionHeader._EXPORT_S1)
+        if magic == 0x10b:
+            self.update(file, OptionHeader._EXPORT)
+        else:
+            self.update(file, OptionHeader._EXPORT_PLUS)
+        self.update(file, OptionHeader._EXPORT_S3)
 
         self._image_type = self._DESC['Magic'][magic]
 
-class PE:
-    _KEYWORD = {
+class PE(Header):
+    _EXPORT = {
         'FileHeader':   CoffFileHeader,
         'OptionHeader': OptionHeader,
     }
+    _DISPLAY = ['FileType']
 
     def __init__(self, file, path):
         self._file = file
         self._path = path
+        super().__init__(display=PE._DISPLAY)
 
-        self.keyword = PE._KEYWORD
-        self.desc    = {}
         self.offset  = file.tell()
 
-        self.__parser()
+        self.update(file, PE._EXPORT)
+
+        export = {'SectionTable': [SectionTable for i in range(self.FileHeader.NumberOfSections)]}
+        self.update(file, export)
+
+        if self.FileHeader.Characteristics & 0x2000:
+            self.FileType = 'DLL'
 
     def __def__(self):
         self._file.close()
-
-    def __str__(self):
-        return str(format(self, self.keyword, self.desc))
-
-    def __parser(self):
-        from_bytes(self, self._file, self.keyword)
-
-        keyword = {'SectionTable': [SectionTable for i in range(self.FileHeader.NumberOfSections)]}
-
-        from_bytes(self, self._file, keyword)
-        self.keyword.update(keyword)
-
-    def format(self):
-        return format(self, self.keyword, self.desc)
-
-    def to_bytes(self):
-        return to_bytes(self, self.keyword)
-
-    def tojson(self, indent='\t'):
-        return json.dumps(format(self, self.keyword, self.desc), indent=indent)
 
     def save(self):
         self._file.seek(self.offset)

@@ -1,4 +1,5 @@
 import sys
+import json
 
 from .defs import MAGIC, COFF_TYPE, READ_BYTE
 
@@ -33,19 +34,20 @@ def parse(obj, file, types):
         var = [parse(obj, file, v) for v in types]
     return var
 
-def from_bytes(obj, file, keyword):
-    for k, v in keyword.items():
+def from_bytes(obj, file, export):
+    for k, v in export.items():
         var = parse(obj, file, v)
         setattr(obj, k, var)
 
-def to_bytes(obj, keyword):
+def to_bytes(obj, export):
     res = b''
-    for k, v in keyword.items():
-        value = getattr(obj, k)
-        if type(v) == int:
-            res = res + value.to_bytes(v, byteorder=sys.byteorder)
-        elif type(v) == type:
-            res = res + value.to_bytes()
+    for k, v in export.items():
+        if hasattr(obj, k):
+            value = getattr(obj, k)
+            if type(v) == int:
+                res = res + value.to_bytes(v, byteorder=sys.byteorder)
+            elif type(v) == type:
+                res = res + value.to_bytes()
 
     return res
 
@@ -70,11 +72,12 @@ def format_obj(key, value, desc):
         res = res + format_desc(value, desc[key])
     return res
 
-def format(obj, keyword, desc):
+def format(obj, display, desc):
     res = {}
-    for k in keyword.keys():
-        value = getattr(obj, k)
-        res[k] = format_obj(k, value, desc)
+    for k in display:
+        if hasattr(obj, k):
+            value = getattr(obj, k)
+            res[k] = format_obj(k, value, desc)
 
     return res
 
@@ -83,3 +86,49 @@ def read_bytes(file, offset, len):
     data = file.read(len)
     file.seek(cur_offset)
     return data
+
+
+class Header:
+    def __init__(self, desc={}, display=[]):
+        self.export  = {}
+        self.desc    = desc
+        self.display = display
+
+    def __str__(self):
+        return str(self.format())
+        
+    def update(self, file, export):
+        from_bytes(self, file, export)
+
+        self.export.update(export)
+        self.display = self.display + list(export.keys())
+        
+    def format(self):
+        return format(self, self.display, self.desc)
+
+    def tojson(self, indent='\t'):
+        return json.dumps(self.format(), indent=indent)
+
+    def to_bytes(self):
+        return to_bytes(self, self.export)
+
+class Version:
+    def __init__(self, file, export):
+        self.export = export
+
+        self.Major = 0
+        self.Minor = 0
+
+        from_bytes(self, file, export)
+
+    def __str__(self):
+        return str(self.format())
+
+    def format(self):
+        return '{0}.{1:0>2d}'.format(self.Major, self.Minor)
+
+    def tojson(self, indent='\t'):
+        return json.dumps(self.format(), indent=indent)
+
+    def to_bytes(self):
+        return to_bytes(self, self.export)
