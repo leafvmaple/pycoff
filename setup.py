@@ -8,7 +8,7 @@ setup(
     name="pycoff",
     version="0.1.0",
     keywords=["coff", "elf", "pe", "pycoff"],
-    description="Coff(ELF on Linux, PE on Windows) parser",
+    description="COFF(ELF on Linux, PE on Windows) parser",
     long_description=long_description,
     long_description_content_type="text/markdown",
     license="BSD License",
