@@ -3,6 +3,7 @@
 from .defs import COFF_TYPE
 from .pe import PE
 from .elf import ELF
+from .ar import AR
 from .utility import check_magic
 
 def parser(file_path):
@@ -13,3 +14,5 @@ def parser(file_path):
         return PE(file, file_path)
     elif coff_type == COFF_TYPE.ELF:
         return ELF(file, file_path)
+    elif coff_type == COFF_TYPE.AR:
+        return AR(file, file_path)

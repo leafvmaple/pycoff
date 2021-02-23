@@ -25,9 +25,15 @@ def check_magic(file):
     if magic == MAGIC.MZ:
         return COFF_TYPE.PE if check_pe(file) else COFF_TYPE.MZ
 
+    # Archive File
+    file.seek(0)
+    magic = file.read(len(MAGIC.AR))
+    if magic == MAGIC.AR:
+        return COFF_TYPE.AR
+
 def parse(obj, file, types):
     if type(types) == str:
-        var = READ_BYTE[types[0]](file, int(types[1]))
+        var = READ_BYTE[types[0]](file, int(types[1:]))
     elif type(types) == type:
         var = types(file)
     elif type(types) == list:
