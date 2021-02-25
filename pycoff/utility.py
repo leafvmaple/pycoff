@@ -1,7 +1,31 @@
 import sys
 import json
 
-from .defs import MAGIC, COFF_TYPE, READ_BYTE
+from .defs import MAGIC, COFF_TYPE
+
+BYTE_ORDER = {
+    '*': sys.byteorder,
+    '+': 'big',
+    '-': 'little',
+}
+
+def read_string(file, byteorder, len):
+    if len == '*':
+        res = b''
+        ch = file.read(1)
+        while(ch != b'\0'):
+            res = res + ch
+            ch = file.read(1)
+    else:
+        res = file.read(int(len))
+    return bytes.decode(res.strip(b'\0 '), errors="strict")
+
+
+READ_BYTE = {
+    'u': lambda f, o, x: int.from_bytes(f.read(int(x)), o),
+    'i': lambda f, o, x: int.from_bytes(f.read(int(x)), o, signed=True),
+    's': lambda f, o, x: read_string(f, o, x),
+}
 
 def check_pe(file):
     file.seek(0x3c)
@@ -25,24 +49,24 @@ def check_magic(file):
     if magic == MAGIC.MZ:
         return COFF_TYPE.PE if check_pe(file) else COFF_TYPE.MZ
 
-    # Archive File
+    # AR
     file.seek(0)
     magic = file.read(len(MAGIC.AR))
     if magic == MAGIC.AR:
         return COFF_TYPE.AR
 
-def parse(obj, file, types):
-    if type(types) == str:
-        var = READ_BYTE[types[0]](file, int(types[1:]))
-    elif type(types) == type:
-        var = types(file)
-    elif type(types) == list:
-        var = [parse(obj, file, v) for v in types]
+def read(file, form):
+    if type(form) == str:
+        var = READ_BYTE[form[1]](file, BYTE_ORDER[form[0]], form[2:])
+    elif type(form) == type:
+        var = form(file)
+    elif type(form) == list:
+        var = [read(file, v) for v in form]
     return var
 
 def from_bytes(obj, file, export):
     for k, v in export.items():
-        var = parse(obj, file, v)
+        var = read(file, v)
         setattr(obj, k, var)
 
 def to_bytes(obj, export):
@@ -63,10 +87,12 @@ def format_desc(value, desc):
             else ' | '.join([desc[v] for v in desc.keys() if value & v])
     else:
         value = desc(value)
-    return " ({0})".format(value)
+    return "{0}".format(value)
 
 def format_obj(key, value, desc):
-    if type(value) == int:
+    if key in desc:
+        res = format_desc(value, desc[key])
+    elif type(value) == int:
         res = "{0:X}".format(value)
     elif type(value) == str:
         res = value
@@ -74,14 +100,13 @@ def format_obj(key, value, desc):
         res = [format_obj(key, v, desc) for v in value]
     else:
         res = value.format()
-    if key in desc:
-        res = res + format_desc(value, desc[key])
+    
     return res
 
-def format(obj, display, desc):
+def format(obj, keys, desc):
     res = {}
-    for k in display:
-        if hasattr(obj, k):
+    for k in keys:
+        if not k.startswith('_'):
             value = getattr(obj, k)
             res[k] = format_obj(k, value, desc)
 
@@ -96,31 +121,30 @@ def read_bytes(file, offset, len):
 
 class Header:
     def __init__(self, desc={}, display=[]):
-        self.export  = {}
-        self.desc    = desc
-        self.display = display
+        self._form    = {}
+        self._export  = {}
+        self._desc    = desc
+        self._display = display
 
     def __str__(self):
         return str(self.format())
         
-    def update(self, file, export):
-        from_bytes(self, file, export)
-
-        self.export.update(export)
-        self.display = self.display + list(export.keys())
-        
     def format(self):
-        return format(self, self.display, self.desc)
+        return format(self, vars(self).keys(), self._desc)
+
+    def read(self, key, file, form):
+        self._form[key] = form
+        setattr(self, key, read(file, form))
 
     def tojson(self, indent='\t'):
         return json.dumps(self.format(), indent=indent)
 
     def to_bytes(self):
-        return to_bytes(self, self.export)
+        return to_bytes(self, self._export)
 
 class Version:
     def __init__(self, file, export):
-        self.export = export
+        self._export = export
 
         self.Major = 0
         self.Minor = 0
@@ -137,4 +161,4 @@ class Version:
         return json.dumps(self.format(), indent=indent)
 
     def to_bytes(self):
-        return to_bytes(self, self.export)
+        return to_bytes(self, self._export)

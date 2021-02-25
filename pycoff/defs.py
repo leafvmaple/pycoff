@@ -16,9 +16,3 @@ class MAGIC:
     PE  = b'PE\0\0'
     AR  = b'!<arch>\n'
 
-    
-READ_BYTE = {
-    'u': lambda f, x: int.from_bytes(f.read(x), byteorder=sys.byteorder),
-    'i': lambda f, x: int.from_bytes(f.read(x), byteorder=sys.byteorder, signed=True),
-    's': lambda f, x: bytes.decode(f.read(x).strip(b'\0 '), errors="strict"),
-}
