@@ -10,12 +10,13 @@ BYTE_ORDER = {
 }
 
 def read_string(file, byteorder, len):
-    if len == '*':
-        res = b''
+    if len <= 0:
+        res = []
         ch = file.read(1)
-        while(ch != b'\0'):
-            res = res + ch
+        while (ch != b'\0'):
+            res.append(ch)
             ch = file.read(1)
+        res = b''.join(res)
     else:
         res = file.read(int(len))
     return bytes.decode(res.strip(b'\0 '), errors="strict")
@@ -24,7 +25,7 @@ def read_string(file, byteorder, len):
 READ_BYTE = {
     'u': lambda f, o, x: int.from_bytes(f.read(int(x)), o),
     'i': lambda f, o, x: int.from_bytes(f.read(int(x)), o, signed=True),
-    's': lambda f, o, x: read_string(f, o, x),
+    's': lambda f, o, x: read_string(f, o, int(x)),
 }
 
 def check_pe(file):
@@ -106,9 +107,8 @@ def format_obj(key, value, desc):
 def format(obj, keys, desc):
     res = {}
     for k in keys:
-        if not k.startswith('_'):
-            value = getattr(obj, k)
-            res[k] = format_obj(k, value, desc)
+        value = getattr(obj, k)
+        res[k] = format_obj(k, value, desc)
 
     return res
 
@@ -120,17 +120,20 @@ def read_bytes(file, offset, len):
 
 
 class Header:
-    def __init__(self, desc={}, display=[]):
+    def __init__(self, desc={}, display=[], filter=[]):
         self._form    = {}
         self._export  = {}
         self._desc    = desc
         self._display = display
+        self._filter  = filter
 
     def __str__(self):
         return str(self.format())
         
     def format(self):
-        return format(self, vars(self).keys(), self._desc)
+        keys = [v for v in vars(self).keys() if (not v.startswith('_') or v in self._display) and v not in self._filter]
+        return format(self, keys, self._desc)
+        # return format(self, list(set(vars(self).keys()).union(set(self._display)).difference(set(self._filter))), self._desc)
 
     def read(self, key, file, form):
         self._form[key] = form
