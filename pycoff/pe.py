@@ -37,7 +37,7 @@ class SectionTable(Header):
         self.read('Characteristics',      file, '*u4')
 
 
-class CoffFileHeader(Header):
+class FileHeader(Header):
     def __init__(self, file):
         super().__init__(desc={
             'Machine': {
@@ -76,7 +76,6 @@ class OptionHeader(Header):
                 0x10b: 'PE32',
                 0x20b: 'PE32+',
             },
-
             'Subsystem': {
                 2: 'Windows GUI',
             },
@@ -164,7 +163,7 @@ class PE(Header):
         self._path = path
         self._offset  = file.tell()
 
-        self.read('FileHeader', file, CoffFileHeader)
+        self.read('FileHeader', file, FileHeader)
         self.read('OptionHeader', file, OptionHeader)
         self.read('SectionTable', file, [SectionTable for i in range(self.FileHeader.NumberOfSections)])
 

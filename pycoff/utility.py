@@ -9,7 +9,7 @@ BYTE_ORDER = {
     '-': 'little',
 }
 
-def read_string(file, byteorder, len):
+def read_string(file, opt, len):
     if len <= 0:
         res = []
         ch = file.read(1)
@@ -19,12 +19,12 @@ def read_string(file, byteorder, len):
         res = b''.join(res)
     else:
         res = file.read(int(len))
-    return bytes.decode(res.strip(b'\0 '), errors="strict")
-
+    res = bytes.decode(res.strip(b'\0 '), errors="strict")
+    return int(res) if opt == 'i' else res
 
 READ_BYTE = {
-    'u': lambda f, o, x: int.from_bytes(f.read(int(x)), o),
-    'i': lambda f, o, x: int.from_bytes(f.read(int(x)), o, signed=True),
+    'u': lambda f, o, x: int.from_bytes(f.read(int(x)), BYTE_ORDER[o]),
+    'i': lambda f, o, x: int.from_bytes(f.read(int(x)), BYTE_ORDER[o], signed=True),
     's': lambda f, o, x: read_string(f, o, int(x)),
 }
 
@@ -58,7 +58,7 @@ def check_magic(file):
 
 def read(file, form):
     if type(form) == str:
-        var = READ_BYTE[form[1]](file, BYTE_ORDER[form[0]], form[2:])
+        var = READ_BYTE[form[1]](file, form[0], form[2:])
     elif type(form) == type:
         var = form(file)
     elif type(form) == list:
@@ -79,16 +79,16 @@ def to_bytes(obj, export):
                 res = res + value.to_bytes(v, byteorder=sys.byteorder)
             elif type(v) == type:
                 res = res + value.to_bytes()
-
     return res
 
 def format_desc(value, desc):
     if type(desc) == dict:
-        value = desc[value] if value in desc \
+        dict_desc = desc[value] if value in desc \
             else ' | '.join([desc[v] for v in desc.keys() if value & v])
+        res = '{0:X} ({1})'.format(value, dict_desc)
     else:
-        value = desc(value)
-    return "{0}".format(value)
+        res = str(desc(value))
+    return res
 
 def format_obj(key, value, desc):
     if key in desc:
@@ -99,6 +99,8 @@ def format_obj(key, value, desc):
         res = value
     elif type(value) == list:
         res = [format_obj(key, v, desc) for v in value]
+    elif type(value) == tuple:
+        res = str(value)
     else:
         res = value.format()
     
