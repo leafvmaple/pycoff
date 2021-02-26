@@ -1,7 +1,65 @@
 import datetime
-from .utility import Header
+import sys
+from .utility import Struct
 
-class ArchiveHeader(Header):
+def read_archive_header(self, file):
+    self._desc.update({
+        'Date': lambda x: datetime.datetime.fromtimestamp(x),
+        'Mode': {
+            0x0040: 'IEXEC',
+            0x0080: 'IWRITE',
+            0x0100: 'IREAD',
+            0x1000: 'IFIFO',
+            0x4000: 'IFDIR',
+            0x8000: 'IFREG',
+        },
+    })
+    self._filter.extend([
+        'EndOfHeader'
+    ])
+
+    self._offset = file.tell()
+    if file.read(1) != b'\n':
+        file.seek(self._offset)
+
+    self.read('Name',        file, '*s16')
+    self.read('Date',        file, 'is12')
+    self.read('UserID',      file, '*s6' )
+    self.read('GroupID',     file, '*s6' )
+    self.read('Mode',        file, 'is8' )
+    self.read('Size',        file, 'is10')
+    self.read('EndOfHeader', file, '*s2' )
+
+    assert(self.EndOfHeader == '`\n')
+
+def read_import_header(self, file):
+    self._desc.update({
+        'Machine': {
+            0x14c:  'x86',
+            0x8664: 'x64',
+        },
+        'TimeDateStamp': lambda x: datetime.datetime.fromtimestamp(x),
+    })
+
+    self.read('Version',       file, '*u2')
+    self.read('Machine',       file, '*u2')
+    self.read('TimeDateStamp', file, '*u4')
+    
+    '''self.read('SizeOfData',    file, '*u4')
+    self.read('Ordinal',       file, '*u2')
+
+    print(file.read(1))
+    
+    raw = int.from_bytes(file.read(2), 'little')
+    print('{0:b}'.format(raw))
+
+    self.Type = raw >> 13
+    self.NameType = (raw >> 10) & 0b111
+
+    print(file.read(20))'''
+
+
+class ArchiveHeader(Struct):
     def __init__(self, file, desc={}, filter=[]):
         desc.update({
             'Date': lambda x: datetime.datetime.fromtimestamp(x),
@@ -34,22 +92,26 @@ class ArchiveHeader(Header):
         assert(self.EndOfHeader == '`\n')
 
 
-class FirstLinkerHeader(ArchiveHeader):
+class FirstLinkerHeader(Struct):
     def __init__(self, file):
-        super().__init__(file, filter=[
+        super().__init__( filter=[
             'Offset', 'StringTable'
         ])
+
+        read_archive_header(self, file)
 
         self.read('NumberOfSymbols', file, '+u4')
         self.read('Offset', file, ['+u4' for i in range(self.NumberOfSymbols)])
         self.read('StringTable', file, ['*s0' for i in range(self.NumberOfSymbols)])
 
 
-class SecondLinkerHeader(ArchiveHeader):
+class SecondLinkerHeader(Struct):
     def __init__(self, file):
-        super().__init__(file, filter=[
+        super().__init__(filter=[
             'Offset', 'Indices', 'StringTable'
         ])
+
+        read_archive_header(self, file)
 
         self.read('NumberOfMembers', file, '*u4')
         self.read('Offset', file, ['*u4' for i in range(self.NumberOfMembers)])
@@ -62,20 +124,30 @@ class SecondLinkerHeader(ArchiveHeader):
             self._indeces_map.setdefault(self.Indices[i], []).append(self.StringTable[i])
 
 
-class LongnamesHeader(ArchiveHeader):
+class LongnamesHeader(Struct):
     def __init__(self, file):
-        super().__init__(file)
+        super().__init__()
+
+        read_archive_header(self, file)
 
         self._data = file.read(self.Size)
 
 
-class ObjectFileHeader(ArchiveHeader):
+class ObjectFileHeader(Struct):
     def __init__(self, file):
-        super().__init__(file, desc={
+        super().__init__(desc={
             'Name': lambda x: self._real_name
         })
 
+        read_archive_header(self, file)
         self._content_offset = file.tell()
+
+        magic = file.read(4)
+        if magic == b'\0\0\xFF\xFF':
+            read_import_header(self, file)
+
+        # read_import_header(self, file)
+
         file.seek(self._content_offset + self.Size)
 
 
@@ -93,7 +165,7 @@ class ObjectFileHeader(ArchiveHeader):
         self.Symbols = indeces
 
 
-class AR(Header):
+class AR(Struct):
     def __init__(self, file, path):
         super().__init__()
 

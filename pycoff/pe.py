@@ -1,7 +1,7 @@
 import sys
 import datetime
 
-from .utility import Header, Version
+from .utility import Struct, Version
 
 class Version2(Version):
     def __init__(self, file):
@@ -11,7 +11,7 @@ class Version4(Version):
     def __init__(self, file):
         super(Version4, self).__init__(file, {'Major': '*u2', 'Minor': '*u2',})
 
-class SectionTable(Header):
+class SectionTable(Struct):
     def __init__(self, file):
         super().__init__(desc={
             'Characteristics': {
@@ -37,7 +37,7 @@ class SectionTable(Header):
         self.read('Characteristics',      file, '*u4')
 
 
-class FileHeader(Header):
+class FileHeader(Struct):
     def __init__(self, file):
         super().__init__(desc={
             'Machine': {
@@ -62,14 +62,14 @@ class FileHeader(Header):
         self.read('Characteristics',      file, '*u2')
 
 
-class DirectoriesHeader(Header):
+class DirectoriesHeader(Struct):
     def __init__(self, file):
         super().__init__()
         self.read('VirtualAddress', file, '*u4')
         self.read('Size',           file, '*u4')
 
 
-class OptionHeader(Header):
+class OptionHeader(Struct):
     def __init__(self, file):
         super().__init__(desc={
             'Magic': {
@@ -155,7 +155,7 @@ class OptionHeader(Header):
         self.read('Reserved',              file, DirectoriesHeader)
 
 
-class PE(Header):
+class PE(Struct):
     def __init__(self, file, path):
         super().__init__(display=['_FileType'])
 

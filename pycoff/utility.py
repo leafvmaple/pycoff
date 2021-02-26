@@ -121,7 +121,7 @@ def read_bytes(file, offset, len):
     return data
 
 
-class Header:
+class Struct:
     def __init__(self, desc={}, display=[], filter=[]):
         self._form    = {}
         self._export  = {}
