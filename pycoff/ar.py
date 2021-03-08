@@ -1,10 +1,11 @@
 import datetime
 import sys
+from .coff import CoffHeader
 from .utility import Struct
 
 def read_archive_header(self, file):
     self._desc.update({
-        'Date': lambda x: datetime.datetime.fromtimestamp(x),
+        'Date': lambda x: datetime.datetime.fromtimestamp(x) if x > 0 else 'FFFFFFFF',
         'Mode': {
             0x0040: 'IEXEC',
             0x0080: 'IWRITE',
@@ -104,6 +105,11 @@ class FirstLinkerHeader(Struct):
         self.read('Offset', file, ['+u4' for i in range(self.NumberOfSymbols)])
         self.read('StringTable', file, ['*s0' for i in range(self.NumberOfSymbols)])
 
+        self._export_list = []
+        for i in range(self.NumberOfSymbols):
+            if not self.StringTable[i].startswith('_'):
+                self._export_list.append(self.StringTable[i])
+
 
 class SecondLinkerHeader(Struct):
     def __init__(self, file):
@@ -139,17 +145,17 @@ class ObjectFileHeader(Struct):
             'Name': lambda x: self._real_name
         })
 
+        self._real_name = ''
+
         read_archive_header(self, file)
         self._content_offset = file.tell()
 
         magic = file.read(4)
         if magic == b'\0\0\xFF\xFF':
-            read_import_header(self, file)
-
-        # read_import_header(self, file)
+            self.read('Cotent', file, CoffHeader)
 
         file.seek(self._content_offset + self.Size)
-
+            
 
     def update_name(self, data):
         if self.Name.startswith('/'):
@@ -177,6 +183,8 @@ class AR(Struct):
         self.read('_Longnames', file, LongnamesHeader)
         self.read('ObjectFiles', file, [ObjectFileHeader for i in range(self.SecondLinker.NumberOfMembers)])
 
-        for i in range(self.SecondLinker.NumberOfMembers):
+        for i in range(len(self.ObjectFiles)):
             self.ObjectFiles[i].update_name(self._Longnames._data)
-            self.ObjectFiles[i].update_symbos(self.SecondLinker.Offset[i], self.SecondLinker._indeces_map[i + 1])
+            # self.ObjectFiles[i].update_symbos(self.SecondLinker.Offset[i], self.SecondLinker._indeces_map[i + 1])
+
+        # print(file.read(128))

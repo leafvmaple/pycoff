@@ -1,60 +1,42 @@
 import sys
 import json
 
-from .defs import MAGIC, COFF_TYPE
-
 BYTE_ORDER = {
     '*': sys.byteorder,
     '+': 'big',
     '-': 'little',
 }
 
+def fread(file, size):
+    data = file.read(size)
+    if len(data) == 0:
+        raise EOFError
+    return data
+
 def read_string(file, opt, len):
     if len <= 0:
         res = []
-        ch = file.read(1)
+        ch = fread(file, 1)
         while (ch != b'\0'):
             res.append(ch)
-            ch = file.read(1)
+            ch = fread(file, 1)
         res = b''.join(res)
     else:
-        res = file.read(int(len))
+        res = fread(file, int(len))
     res = bytes.decode(res.strip(b'\0 '), errors="strict")
-    return int(res) if opt == 'i' else res
+    if opt == 'i':
+        try:
+            res = int(res)
+        except ValueError:
+            res = 0
+
+    return res
 
 READ_BYTE = {
-    'u': lambda f, o, x: int.from_bytes(f.read(int(x)), BYTE_ORDER[o]),
-    'i': lambda f, o, x: int.from_bytes(f.read(int(x)), BYTE_ORDER[o], signed=True),
+    'u': lambda f, o, x: int.from_bytes(fread(f, int(x)), BYTE_ORDER[o]),
+    'i': lambda f, o, x: int.from_bytes(fread(f, int(x)), BYTE_ORDER[o], signed=True),
     's': lambda f, o, x: read_string(f, o, int(x)),
 }
-
-def check_pe(file):
-    file.seek(0x3c)
-    sign_offset = int.from_bytes(file.read(4), byteorder=sys.byteorder)
-    if sign_offset <= 0:
-        return False
-
-    file.seek(sign_offset)
-    magic = file.read(len(MAGIC.PE))
-    return magic == MAGIC.PE
-
-def check_magic(file):
-    # ELF
-    magic = file.read(len(MAGIC.ELF))
-    if magic == MAGIC.ELF:
-        return COFF_TYPE.ELF
-
-    # PE / MZ
-    file.seek(0)
-    magic = file.read(len(MAGIC.MZ))
-    if magic == MAGIC.MZ:
-        return COFF_TYPE.PE if check_pe(file) else COFF_TYPE.MZ
-
-    # AR
-    file.seek(0)
-    magic = file.read(len(MAGIC.AR))
-    if magic == MAGIC.AR:
-        return COFF_TYPE.AR
 
 def read(file, form):
     if type(form) == str:
@@ -62,7 +44,12 @@ def read(file, form):
     elif type(form) == type:
         var = form(file)
     elif type(form) == list:
-        var = [read(file, v) for v in form]
+        var = []
+        for v in form:
+            try:
+                var.append(read(file, v))
+            except EOFError:
+                pass
     return var
 
 def from_bytes(obj, file, export):
