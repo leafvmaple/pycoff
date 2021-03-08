@@ -35,16 +35,16 @@ READ_BYTE = {
     's': lambda f, o, x: read_string(f, o, int(x)),
 }
 
-def read(file, form):
+def read(file, form, initvars=None):
     if type(form) == str:
         var = READ_BYTE[form[1]](file, form[0], form[2:])
     elif type(form) == type:
-        var = form(file)
+        var = form(file, initvars) if initvars else form(file)
     elif type(form) == list:
         var = []
         for v in form:
             try:
-                var.append(read(file, v))
+                var.append(read(file, v, initvars))
             except EOFError:
                 pass
     return var
@@ -106,12 +106,16 @@ def read_bytes(file, offset, len):
 
 
 class Struct:
-    def __init__(self, desc={}, display=[], filter=[]):
+    def __init__(self, desc={}, display=[], filter=[], initvars=None):
         self._form    = {}
         self._export  = {}
         self._desc    = desc
         self._display = display
         self._filter  = filter
+
+        if initvars:
+            for k, v in initvars.items():
+                setattr(self, k, v)
 
     def __str__(self):
         return str(self.format())
@@ -121,9 +125,9 @@ class Struct:
         return format(self, keys, self._desc)
         # return format(self, list(set(vars(self).keys()).union(set(self._display)).difference(set(self._filter))), self._desc)
 
-    def read(self, key, file, form):
+    def read(self, key, file, form, initvars=None):
         self._form[key] = form
-        setattr(self, key, read(file, form))
+        setattr(self, key, read(file, form, initvars))
 
     def tojson(self, indent='\t'):
         return json.dumps(self.format(), indent=indent)
