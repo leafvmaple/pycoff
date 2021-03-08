@@ -25,10 +25,7 @@ def read_string(file, opt, len):
         res = fread(file, int(len))
     res = bytes.decode(res.strip(b'\0 '), errors="strict")
     if opt == 'i':
-        try:
-            res = int(res)
-        except ValueError:
-            res = 0
+        res = int(res)
 
     return res
 
@@ -72,7 +69,7 @@ def format_desc(value, desc):
     if type(desc) == dict:
         dict_desc = desc[value] if value in desc \
             else ' | '.join([desc[v] for v in desc.keys() if value & v])
-        res = '{0:X} ({1})'.format(value, dict_desc)
+        res = '{0:X} ({1})'.format(value, dict_desc) if len(dict_desc) > 0 else '{0:X}'.format(value)
     else:
         res = str(desc(value))
     return res

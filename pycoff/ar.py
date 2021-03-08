@@ -155,7 +155,6 @@ class ObjectFileHeader(Struct):
             self.read('Cotent', file, CoffHeader)
 
         file.seek(self._content_offset + self.Size)
-            
 
     def update_name(self, data):
         if self.Name.startswith('/'):
