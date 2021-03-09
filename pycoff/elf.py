@@ -1,4 +1,4 @@
-from .utility import Struct
+from .utility import Struct, get_null_string
 
 class FileHeader(Struct):
     def __init__(self, file):
@@ -50,12 +50,12 @@ class FileHeader(Struct):
         
         if self._Class == 'x86':
             self.read('Entry', file, '*u4')
-            self.read('Phoff', file, '*u4')
-            self.read('Shoff', file, '*u4')
+            self.read('ProgramHeaderOffset', file, '*u4')
+            self.read('SectionHeaderOffset', file, '*u4')
         else:
             self.read('Entry', file, '*u8')
-            self.read('Phoff', file, '*u8')
-            self.read('Shoff', file, '*u8')
+            self.read('ProgramHeaderOffset', file, '*u8')
+            self.read('SectionHeaderOffset', file, '*u8')
 
         self.read('Flags',               file, '*u4')
         self.read('FileHeaderSize',      file, '*u2')
@@ -63,7 +63,7 @@ class FileHeader(Struct):
         self.read('ProgramHeaderNum',    file, '*u2')
         self.read('SectionHeaderSize',   file, '*u2')
         self.read('SectionHeaderNum',    file, '*u2')
-        self.read('SectionHeaderStrIdx', file, '*u2')
+        self.read('StringTableIndex',      file, '*u2')
 
 
 class ProgramHeader(Struct):
@@ -103,6 +103,67 @@ class ProgramHeader(Struct):
             self.read('Align',   file, '*u8')
 
 
+class SectionHeader(Struct):
+    def __init__(self, file, initvars):
+        super().__init__(desc={
+            'Type': {
+                0x00: 'NULL',
+                0x01: 'PROGBITS',
+                0x02: 'SYMTAB',
+                0x03: 'STRTAB',
+                0x04: 'RELA',
+                0x05: 'HASH',
+                0x006: 'PHDR',
+                0x07: 'NOTE',
+                0x08: 'NOBITS',
+                0x09: 'REL',
+                0x0A: 'SHLIB',
+                0x0B: 'DYNSYM',
+                0x0E: 'INIT_ARRAY',
+                0x0F: 'FINI_ARRAY',
+                0x10: 'PREINIT_ARRAY',
+                0x11: 'GROUP',
+                0x12: 'SYMTAB_SHNDX',
+                0x13: 'NUM',
+                
+                0x6FFFFFF6: 'GNU_HASH',
+                0x6FFFFFFE: 'GNU_VERNEED',
+                0x6FFFFFFF: 'GNU_VERSYM',
+            },
+        }, initvars=initvars)
+
+        self.read('Name',    file, '*u4')
+        self.read('Type',    file, '*u4')
+
+        if self._Class == 'x86':
+            self.read('Flags',       file, '*u4')
+            self.read('Addr',        file, '*u4')
+            self.read('Offset',      file, '*u4')
+            self.read('Size',        file, '*u4')
+            self.read('Link',        file, '*u4')
+            self.read('Info',        file, '*u4')
+            self.read('AddrAlign',   file, '*u4')
+            self.read('EntSize',     file, '*u4')
+        else:
+            self.read('Flags',       file, '*u8')
+            self.read('Addr',        file, '*u8')
+            self.read('Offset',      file, '*u8')
+            self.read('Size',        file, '*u8')
+            self.read('Link',        file, '*u4')
+            self.read('Info',        file, '*u4')
+            self.read('AddrAlign',   file, '*u8')
+            self.read('EntSize',     file, '*u8')
+
+        self._end_offset = file.tell()
+
+        file.seek(self.Offset)
+        self._data = file.read(self.Size)
+        file.seek(self._end_offset)
+
+    def update_name(self, data):
+        self.Name = get_null_string(data, self.Name)
+
+
 class ELF(Struct):
     def __init__(self, file, path):
         super().__init__()
@@ -110,9 +171,19 @@ class ELF(Struct):
         self._file = file
         self._path = path
 
-        self.read('FileHeader',    file, FileHeader)
-        self.read('ProgramHeader', file, [ProgramHeader for i in range(self.FileHeader.ProgramHeaderNum)], {
-            '_Class': self.FileHeader._Class
-        })
+        self.read('FileHeader', file, FileHeader)
 
-        print(file.read(16))
+        if self.FileHeader.ProgramHeaderNum > 0:
+            self.read('ProgramHeader', file, [ProgramHeader for i in range(self.FileHeader.ProgramHeaderNum)], {
+                '_Class': self.FileHeader._Class
+            })
+
+        if self.FileHeader.SectionHeaderNum > 0:
+            file.seek(self.FileHeader.SectionHeaderOffset)
+            self.read('SectionHeader', file, [SectionHeader for i in range(self.FileHeader.SectionHeaderNum)], {
+                '_Class': self.FileHeader._Class
+            })
+
+            strtab = self.SectionHeader[self.FileHeader.StringTableIndex]._data
+            for sh in self.SectionHeader:
+                sh.update_name(strtab)

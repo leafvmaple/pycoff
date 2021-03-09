@@ -7,6 +7,10 @@ BYTE_ORDER = {
     '-': 'little',
 }
 
+def get_null_string(data, offset):
+    idx = data.find(b'\0', offset)
+    return bytes.decode(data[offset: idx])
+
 def fread(file, size):
     data = file.read(size)
     if len(data) == 0:

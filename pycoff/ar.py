@@ -1,7 +1,7 @@
 import datetime
 import sys
 from .coff import CoffHeader
-from .utility import Struct
+from .utility import Struct, get_null_string
 
 def read_archive_header(self, file):
     self._desc.update({
@@ -158,12 +158,7 @@ class ObjectFileHeader(Struct):
 
     def update_name(self, data):
         if self.Name.startswith('/'):
-            idx = int(self.Name[1:])
-            name = []
-            while data[idx] != 0:
-                name.append(chr(data[idx]))
-                idx = idx + 1
-            self._real_name = ''.join(name)
+            self._real_name = get_null_string(data, int(self.Name[1:]))
 
     def update_symbos(self, addr, indeces):
         self.Addr = addr
