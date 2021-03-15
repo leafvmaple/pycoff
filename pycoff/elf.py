@@ -130,6 +130,16 @@ class SectionHeader(Struct):
                 0x6FFFFFFE: 'GNU_VERNEED',
                 0x6FFFFFFF: 'GNU_VERSYM',
             },
+            'Flags': {
+                0x001: 'WRITE',
+                0x002: 'ALLOC',
+                0x004: 'EXECINSTR',
+                0x010: 'MERGE',
+                0x020: 'STRINGS',
+                0x040: 'INFO_LINK',
+                0x080: 'LINK_ORDER',
+                0x100: 'OS_NONCONFORMING',
+            },
         }, initvars=initvars)
 
         self.read('Name',    file, '*u4')
@@ -166,7 +176,10 @@ class SectionHeader(Struct):
 
 class ELF(Struct):
     def __init__(self, file, path):
-        super().__init__()
+        super().__init__(display=['_Comment'])
+
+        bytes_section = ['.text', '.data', '.bss']
+        contents_section = ['.rodata', '.comment']
 
         self._file = file
         self._path = path
@@ -187,3 +200,8 @@ class ELF(Struct):
             strtab = self.SectionHeader[self.FileHeader.StringTableIndex]._data
             for sh in self.SectionHeader:
                 sh.update_name(strtab)
+
+                if sh.Name in bytes_section:
+                    setattr(self, sh.Name, sh._data)
+                if sh.Name in contents_section:
+                    setattr(self, sh.Name, bytes.decode(sh._data.strip(b'\0 '), errors="strict"))

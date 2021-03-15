@@ -89,6 +89,8 @@ def format_obj(key, value, desc):
         res = [format_obj(key, v, desc) for v in value]
     elif type(value) == tuple:
         res = str(value)
+    elif type(value) == bytes:
+        res = ' '.join(['%02X' % b for b in value])
     else:
         res = value.format()
     
