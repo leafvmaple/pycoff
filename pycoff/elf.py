@@ -169,6 +169,8 @@ class SectionHeader(Struct):
         file.seek(self.Offset)
         self._data = file.read(self.Size)
         file.seek(self._end_offset)
+        
+        self._contents = bytes.decode(self._data.strip(b'\0 ')) if self.Flags & 0x020 else self._data
 
     def update_name(self, data):
         self.Name = get_null_string(data, self.Name)
@@ -176,10 +178,11 @@ class SectionHeader(Struct):
 
 class ELF(Struct):
     def __init__(self, file, path):
-        super().__init__(display=['_Comment'])
+        super().__init__(
+            filter=['ProgramHeaders', 'SectionHeaders']
+        )
 
-        bytes_section = ['.text', '.data', '.bss']
-        contents_section = ['.rodata', '.comment']
+        section = ['.text', '.data', '.bss', '.rodata', '.comment']
 
         self._file = file
         self._path = path
@@ -187,21 +190,19 @@ class ELF(Struct):
         self.read('FileHeader', file, FileHeader)
 
         if self.FileHeader.ProgramHeaderNum > 0:
-            self.read('ProgramHeader', file, [ProgramHeader for i in range(self.FileHeader.ProgramHeaderNum)], {
+            self.read('ProgramHeaders', file, [ProgramHeader for i in range(self.FileHeader.ProgramHeaderNum)], {
                 '_Class': self.FileHeader._Class
             })
 
         if self.FileHeader.SectionHeaderNum > 0:
             file.seek(self.FileHeader.SectionHeaderOffset)
-            self.read('SectionHeader', file, [SectionHeader for i in range(self.FileHeader.SectionHeaderNum)], {
+            self.read('SectionHeaders', file, [SectionHeader for i in range(self.FileHeader.SectionHeaderNum)], {
                 '_Class': self.FileHeader._Class
             })
 
-            strtab = self.SectionHeader[self.FileHeader.StringTableIndex]._data
-            for sh in self.SectionHeader:
+            strtab = self.SectionHeaders[self.FileHeader.StringTableIndex]._data
+            for sh in self.SectionHeaders:
                 sh.update_name(strtab)
 
-                if sh.Name in bytes_section:
-                    setattr(self, sh.Name, sh._data)
-                if sh.Name in contents_section:
-                    setattr(self, sh.Name, bytes.decode(sh._data.strip(b'\0 '), errors="strict"))
+                if sh.Name in section:
+                    setattr(self, sh.Name, sh._contents)
