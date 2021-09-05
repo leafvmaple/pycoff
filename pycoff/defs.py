@@ -10,6 +10,7 @@ class COFF_TYPE(Enum):
     PE   = 3
     AR   = 4
     COFF = 5
+    OBJ  = 6
 
 class MAGIC:
     ELF  = b'\x7fELF'

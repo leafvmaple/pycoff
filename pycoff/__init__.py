@@ -5,6 +5,7 @@ from .pe import PE
 from .elf import ELF
 from .ar import AR
 from .coff import COFF
+from .obj import OBJ
 
 from .defs import MAGIC, COFF_TYPE
 
@@ -19,7 +20,6 @@ def check_pe(file):
     return magic == MAGIC.PE
 
 def check_magic(file):
-
     # ELF
     magic = file.read(len(MAGIC.ELF))
     if magic == MAGIC.ELF:
@@ -42,6 +42,10 @@ def check_magic(file):
     if magic == MAGIC.COFF:
         return COFF_TYPE.COFF
 
+    file.seek(0)
+
+    return COFF_TYPE.OBJ
+
 
 def parser(file_path):
     file = open(file_path, 'rb+')
@@ -55,3 +59,5 @@ def parser(file_path):
         return ELF(file, file_path)
     elif coff_type == COFF_TYPE.AR:
         return AR(file, file_path)
+    elif coff_type == COFF_TYPE.OBJ:
+        return OBJ(file, file_path)

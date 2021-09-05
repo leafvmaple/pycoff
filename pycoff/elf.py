@@ -1,5 +1,15 @@
 from .utility import Struct, get_null_string
 
+class Section(Struct):
+    def __init__(self, file, initvars):
+        super().__init__(initvars=initvars)
+
+        self._data = file.read(self.Size)
+        self._contents = bytes.decode(self._data.strip(b'\0 ')) if self.Flags & 0x020 else ' '.join(['%02X' % b for b in self._data])
+    
+    def format(self):
+        return self._contents
+
 class FileHeader(Struct):
     def __init__(self, file):
         super().__init__(desc={
@@ -167,10 +177,11 @@ class SectionHeader(Struct):
         self._end_offset = file.tell()
 
         file.seek(self.Offset)
-        self._data = file.read(self.Size)
+        self.read('_Section', file, Section, {
+            'Size': self.Size,
+            'Flags': self.Flags,
+        })
         file.seek(self._end_offset)
-        
-        self._contents = bytes.decode(self._data.strip(b'\0 ')) if self.Flags & 0x020 else self._data
 
     def update_name(self, data):
         self.Name = get_null_string(data, self.Name)
@@ -200,9 +211,9 @@ class ELF(Struct):
                 '_Class': self.FileHeader._Class
             })
 
-            strtab = self.SectionHeaders[self.FileHeader.StringTableIndex]._data
+            strtab = self.SectionHeaders[self.FileHeader.StringTableIndex]._Section._data
             for sh in self.SectionHeaders:
                 sh.update_name(strtab)
 
                 if sh.Name in section:
-                    setattr(self, sh.Name, sh._contents)
+                    setattr(self, sh.Name, sh._Section)
