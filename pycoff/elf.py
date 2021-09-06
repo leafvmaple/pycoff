@@ -4,11 +4,54 @@ class Section(Struct):
     def __init__(self, file, initvars):
         super().__init__(initvars=initvars)
 
-        self._data = file.read(self.Size)
-        self._contents = bytes.decode(self._data.strip(b'\0 ')) if self.Flags & 0x020 else ' '.join(['%02X' % b for b in self._data])
+        self._data = file.read(self._Size)
+        self._contents = bytes.decode(self._data.strip(b'\0 ')) if self._Flags & 0x020 else ' '.join(['%02X' % b for b in self._data])
     
     def format(self):
         return self._contents
+
+    def update_string(self, data):
+        pass
+
+class SectionDescriptor(Struct):
+    def __init__(self, file):
+        super().__init__()
+        
+        self.read('_NameIndex',   file, '*u4')
+        self.read('Value',        file, '*u4')
+        self.read('Size',         file, '*u4')
+        self.read('Info',         file, '*u1')
+        self.read('Other',        file, '*u1')
+        self.read('SectionIndex', file, '*u2')
+    
+    def update_string(self, data):
+        self.Name = get_null_string(data, self._NameIndex)
+
+class SymbolSection(Struct):
+    def __init__(self, file, initvars):
+        super().__init__(initvars=initvars)
+
+        self._Count = self._Size // self._EntSize
+        self.read('SectionDescriptors', file, [SectionDescriptor for i in range(self._Count)])
+
+    def update_string(self, data):
+        for sd in self.SectionDescriptors:
+            sd.update_string(data)
+
+class StringSection(Struct):
+    def __init__(self, file, initvars):
+        super().__init__(initvars=initvars)
+
+        self._data = file.read(self._Size)
+        self._contents = self._data.split(b'\0')
+
+    def format(self):
+        return [str(v) for v in self._contents]
+
+SECTION_ENTRY = {
+    0x02: SymbolSection,
+    0x03: StringSection,
+}
 
 class FileHeader(Struct):
     def __init__(self, file):
@@ -73,7 +116,7 @@ class FileHeader(Struct):
         self.read('ProgramHeaderNum',    file, '*u2')
         self.read('SectionHeaderSize',   file, '*u2')
         self.read('SectionHeaderNum',    file, '*u2')
-        self.read('StringTableIndex',      file, '*u2')
+        self.read('StringTableIndex',    file, '*u2')
 
 
 class ProgramHeader(Struct):
@@ -152,8 +195,8 @@ class SectionHeader(Struct):
             },
         }, initvars=initvars)
 
-        self.read('Name',    file, '*u4')
-        self.read('Type',    file, '*u4')
+        self.read('_NameIndex', file, '*u4')
+        self.read('Type',       file, '*u4')
 
         if self._Class == 'x86':
             self.read('Flags',       file, '*u4')
@@ -177,14 +220,18 @@ class SectionHeader(Struct):
         self._end_offset = file.tell()
 
         file.seek(self.Offset)
-        self.read('_Section', file, Section, {
-            'Size': self.Size,
-            'Flags': self.Flags,
+        self.read('_Section', file, Section if self.Type not in SECTION_ENTRY else SECTION_ENTRY[self.Type], {
+            '_Size'   : self.Size,
+            '_Flags'  : self.Flags,
+            '_EntSize': self.EntSize,
         })
         file.seek(self._end_offset)
 
     def update_name(self, data):
-        self.Name = get_null_string(data, self.Name)
+        self.Name = get_null_string(data, self._NameIndex)
+
+    def update_string(self, data):
+        self._Section.update_string(data)
 
 
 class ELF(Struct):
@@ -193,7 +240,7 @@ class ELF(Struct):
             filter=['ProgramHeaders', 'SectionHeaders']
         )
 
-        section = ['.text', '.data', '.bss', '.rodata', '.comment']
+        section = ['.text', '.data', '.bss', '.rodata', '.comment', '.symtab', '.strtab']
 
         self._file = file
         self._path = path
@@ -215,5 +262,7 @@ class ELF(Struct):
             for sh in self.SectionHeaders:
                 sh.update_name(strtab)
 
-                if sh.Name in section:
-                    setattr(self, sh.Name, sh._Section)
+                #if sh.Name in section:
+                setattr(self, sh.Name, sh._Section)
+
+            getattr(self, '.symtab').update_string(getattr(self, '.strtab')._data)
