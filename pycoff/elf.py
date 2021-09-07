@@ -1,13 +1,38 @@
 from .utility import Struct, get_null_string, read
 
+SHN = {
+    0X0  : 'UNDEF',
+    0xFFF1: 'ABS',
+    0xFFF2: 'COMMON',
+}
+
 class SectionDescriptor(Struct):
     def __init__(self, file):
-        super().__init__()
+        super().__init__(desc={
+            'SectionIndex':  lambda x: '{0:X} ({1})'.format(x, SHN[x]) if x in SHN else '{0:X}'.format(x),
+            'Bind': {
+                0:  'LOCAL',
+                1:  'GLOBAL',
+                2:  'WEAK',
+                13: 'LOPROC',
+                15: 'HIPORC',
+            },
+            'Type': {
+                0: 'NONTYPE',
+                1: 'OBJECT',
+                2: 'FUNC',
+                3: 'SECTION',
+                4: 'FILE',
+            },
+        })
         
         self.read('_NameIndex',   file, '*u4')
         self.read('Value',        file, '*u4')
         self.read('Size',         file, '*u4')
-        self.read('Info',         file, '*u1')
+        # self.read('Info',         file, '*u1')
+        info = read(file, '*u1')
+        self.Bind = info >> 4
+        self.Type = info & 0xF
         self.read('Other',        file, '*u1')
         self.read('SectionIndex', file, '*u2')
     
