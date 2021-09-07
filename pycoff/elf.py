@@ -1,17 +1,4 @@
-from .utility import Struct, get_null_string
-
-class Section(Struct):
-    def __init__(self, file, initvars):
-        super().__init__(initvars=initvars)
-
-        self._data = file.read(self._Size)
-        self._contents = bytes.decode(self._data.strip(b'\0 ')) if self._Flags & 0x020 else ' '.join(['%02X' % b for b in self._data])
-    
-    def format(self):
-        return self._contents
-
-    def update_string(self, data):
-        pass
+from .utility import Struct, get_null_string, read
 
 class SectionDescriptor(Struct):
     def __init__(self, file):
@@ -24,8 +11,21 @@ class SectionDescriptor(Struct):
         self.read('Other',        file, '*u1')
         self.read('SectionIndex', file, '*u2')
     
-    def update_string(self, data):
+    def update(self, data):
         self.Name = get_null_string(data, self._NameIndex)
+
+class Section(Struct):
+    def __init__(self, file, initvars):
+        super().__init__(initvars=initvars)
+
+        self._data = file.read(self._Size)
+        self._contents = bytes.decode(self._data.strip(b'\0 ')) if self._Flags & 0x020 else ' '.join(['%02X' % b for b in self._data])
+    
+    def format(self):
+        return self._contents
+
+    def update(self, StringTableIndex, sections):
+        pass
 
 class SymbolSection(Struct):
     def __init__(self, file, initvars):
@@ -34,9 +34,9 @@ class SymbolSection(Struct):
         self._Count = self._Size // self._EntSize
         self.read('SectionDescriptors', file, [SectionDescriptor for i in range(self._Count)])
 
-    def update_string(self, data):
+    def update(self, StringTableIndex, sections):
         for sd in self.SectionDescriptors:
-            sd.update_string(data)
+            sd.update(sections[StringTableIndex]._data)
 
 class StringSection(Struct):
     def __init__(self, file, initvars):
@@ -47,6 +47,9 @@ class StringSection(Struct):
 
     def format(self):
         return [str(v) for v in self._contents]
+
+    def update(self, StringTableIndex, sections):
+        pass
 
 SECTION_ENTRY = {
     0x02: SymbolSection,
@@ -116,7 +119,7 @@ class FileHeader(Struct):
         self.read('ProgramHeaderNum',    file, '*u2')
         self.read('SectionHeaderSize',   file, '*u2')
         self.read('SectionHeaderNum',    file, '*u2')
-        self.read('StringTableIndex',    file, '*u2')
+        self.read('SectionHeaderStrNdx', file, '*u2')
 
 
 class ProgramHeader(Struct):
@@ -217,22 +220,8 @@ class SectionHeader(Struct):
             self.read('AddrAlign',   file, '*u8')
             self.read('EntSize',     file, '*u8')
 
-        self._end_offset = file.tell()
-
-        file.seek(self.Offset)
-        self.read('_Section', file, Section if self.Type not in SECTION_ENTRY else SECTION_ENTRY[self.Type], {
-            '_Size'   : self.Size,
-            '_Flags'  : self.Flags,
-            '_EntSize': self.EntSize,
-        })
-        file.seek(self._end_offset)
-
-    def update_name(self, data):
-        self.Name = get_null_string(data, self._NameIndex)
-
-    def update_string(self, data):
-        self._Section.update_string(data)
-
+    def update(self, shstrndx, sections):
+        self.Name = get_null_string(sections[shstrndx]._data, self._NameIndex)
 
 class ELF(Struct):
     def __init__(self, file, path):
@@ -258,11 +247,22 @@ class ELF(Struct):
                 '_Class': self.FileHeader._Class
             })
 
-            strtab = self.SectionHeaders[self.FileHeader.StringTableIndex]._Section._data
+            self.Sections = []
             for sh in self.SectionHeaders:
-                sh.update_name(strtab)
+                file.seek(sh.Offset)
+                self.Sections.append(read(file, Section if sh.Type not in SECTION_ENTRY else SECTION_ENTRY[sh.Type], {
+                    '_Size'   : sh.Size,
+                    '_Flags'  : sh.Flags,
+                    '_EntSize': sh.EntSize,
+                }))
 
-                #if sh.Name in section:
-                setattr(self, sh.Name, sh._Section)
+            # Update SectionHeaders
+            for i, sh in enumerate(self.SectionHeaders):
+                sh.update(self.FileHeader.SectionHeaderStrNdx, self.Sections)
+                if sh.Name == '.strtab':
+                    self.FileHeader._StringTableIndex = i
 
-            getattr(self, '.symtab').update_string(getattr(self, '.strtab')._data)
+            # Update Sections
+            for i, section in enumerate(self.Sections):
+                section.update(self.FileHeader._StringTableIndex, self.Sections)
+                setattr(self, self.SectionHeaders[i].Name, section)
